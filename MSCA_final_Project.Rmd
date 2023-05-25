@@ -1,0 +1,94 @@
+---
+title: "MSCA_final_Project"
+author: "Moushumi Pardesi"
+date: "2023-05-25"
+output: html_document
+---
+
+### MSCA Final Project
+### Chicago crime from 2001 to 2023 (22 years)
+```{r setup, include=TRUE}
+setwd("/Users/moush/Desktop/UChicago FINM/Time Series")
+data<-data.frame(read.csv("Crimes_-_2001_to_Present.csv"))
+data <- data[, !(colnames(data) %in% c("ID", "Case.Number", "IUCR", "Block", "Description", "Location.Description", "Arrest", "Domestic", "Beat", "District", "Ward", "Community.Area", "FBI.Code", "X.Coordinate", "Y.Coordinate", "Updated.On", "Latitude", "Longitude", "Location", "Historical.Wards.2003.2015", "Zip.Codes", "Community.Areas", "Census.Tracts", "Wards", "Boundaries...ZIP.Codes", "Police.Districts", "Police.Beats"))]
+
+```
+
+
+```{r date}
+library(dplyr)
+library(lubridate)
+data$NewDate <- mdy_hms(data$Date)
+data$MonthYear <- format(floor_date(data$NewDate, unit = "month"), "%m/%Y")
+monthly_data <- data %>%
+  group_by(MonthYear) %>%
+  summarise(Count = n())
+data <- merge(data, monthly_data, by = "MonthYear", all.x = TRUE)
+```
+
+### Using the timeseries monthly_data prepared after cleaning up the raw dataframe
+
+```{r type of crime}
+type_counts <- table(data$Primary.Type)
+barplot(type_counts, main = "Type of crime", xlab = "Primary Type", ylab = "Count")
+```
+
+```{r EDA}
+library(tseries)
+library(zoo)
+final_series<-monthly_data
+final_series$Date<-as.yearmon(final_series$MonthYear, "%m/%Y")
+series<-data.frame(Date=c(final_series$Date), Crime=c(final_series$Count))
+crime_data <- ts(series$Crime, start = start(series$Date), frequency = 12)
+
+
+adf_result <- adf.test(crime_data)
+print(adf_result)
+
+
+```
+```{r EDA}
+acf(crime_data)
+pacf(crime_data)
+qqnorm(crime_data)
+qqline(crime_data)
+boxplot(crime_data)
+arima_model<-arima(crime_data,order=c(1,0,6))
+arima_residuals <- residuals(arima_model)
+plot(arima_residuals, type = "l", xlab = "Time", ylab = "Residuals")
+shapiro.test(arima_residuals)
+```
+```{r visualization}
+plot(final_series$Date, final_series$Count)
+
+```
+
+```{r feature engineering}
+library(dplyr)
+#creating lagged variant to capture temporal dependencies
+stats::lag(crime_data)
+#using fourier transform to decompose the time series into different frequency components
+fft(crime_data)
+library(forecast)
+#STL decomposition
+stl_result <- stl(crime_data, s.window = "periodic")
+plot(stl_result)
+
+
+```
+
+```{r final model}
+
+library(prophet)
+newdata<-data.frame(ds=c(final_series$Date), y=c(final_series$Count))
+newdata$ds<-as.Date(newdata$ds)
+model <- prophet()
+model_fit <- fit.prophet(model, newdata)
+future <- make_future_dataframe(model_fit, periods = 12)
+forecast <- predict(model_fit, future)
+plot(model_fit, forecast)
+summary(model_fit)
+
+
+
+```
